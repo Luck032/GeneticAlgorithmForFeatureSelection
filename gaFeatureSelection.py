@@ -5,8 +5,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import LabelEncoder
 from deap import creator, base, tools, algorithms
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, StratifiedKFold
 import sys
 
+
+random.seed(42)
+np.random.seed(42)
 
 def avg(l):
     """
@@ -30,9 +35,9 @@ def getFitness(individual, X, y):
         X_subset = pd.get_dummies(X_parsed)
 
         # apply classification algorithm
-        clf = LogisticRegression()
+        clf = RandomForestClassifier(random_state=42, n_jobs=-1)
 
-        return (avg(cross_val_score(clf, X_subset, y, cv=5)),)
+        return (avg(cross_val_score(clf, X_subset, y, cv=cv)),)
     else:
         return(0,)
 
@@ -67,9 +72,9 @@ def geneticAlgorithm(X, y, n_population, n_generation):
     stats.register("max", np.max)
 
     # genetic algorithm
-    pop, log = algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2,
+    pop, log = algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.1,
                                    ngen=n_generation, stats=stats, halloffame=hof,
-                                   verbose=True)
+                                   verbose=False)
 
     # return hall of fame
     return hof
@@ -79,68 +84,40 @@ def bestIndividual(hof, X, y):
     """
     Get the best individual
     """
-    maxAccurcy = 0.0
+    maxAccuracy = 0.0
+    _individual = None
+
     for individual in hof:
-        if(individual.fitness.values > maxAccurcy):
-            maxAccurcy = individual.fitness.values
+        acc = individual.fitness.values[0]
+        if acc > maxAccuracy:
+            maxAccuracy = acc
             _individual = individual
 
-    _individualHeader = [list(X)[i] for i in range(
-        len(_individual)) if _individual[i] == 1]
-    return _individual.fitness.values, _individual, _individualHeader
-
-
-def getArguments():
-    """
-    Get argumments from command-line
-    If pass only dataframe path, pop and gen will be default
-    """
-    dfPath = sys.argv[1]
-    if(len(sys.argv) == 4):
-        pop = int(sys.argv[2])
-        gen = int(sys.argv[3])
-    else:
-        pop = 10
-        gen = 2
-    return dfPath, pop, gen
+    _individualHeader = [list(X)[i] for i in range(len(_individual)) if _individual[i] == 1]
+    return maxAccuracy, _individual, _individualHeader
 
 
 if __name__ == '__main__':
-    # get dataframe path, population number and generation number from command-line argument
-    dataframePath, n_pop, n_gen = getArguments()
-    # read dataframe from csv
-    df = pd.read_csv(dataframePath, sep=',')
 
-    # encode labels column to numbers
-    le = LabelEncoder()
-    le.fit(df.iloc[:, -1])
-    y = le.transform(df.iloc[:, -1])
-    X = df.iloc[:, :-1]
 
-    # get accuracy with all features
-    individual = [1 for i in range(len(X.columns))]
+    # Load your data
+
+    # X = ...
+    # y = ...
+
+    cv = StratifiedKFold(n_splits=3)
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, stratify=y, random_state=42)
+
+    individual = [1 for i in range(len(X_train.columns))]
     print("Accuracy with all features: \t" +
-          str(getFitness(individual, X, y)) + "\n")
+            str(getFitness(individual, X_train, y_train)) + "\n")
 
-    # apply genetic algorithm
-    hof = geneticAlgorithm(X, y, n_pop, n_gen)
+    n_gen = 50
+    n_pop = 50
 
-    # select the best individual
-    accuracy, individual, header = bestIndividual(hof, X, y)
-    print('Best Accuracy: \t' + str(accuracy))
+    hof = geneticAlgorithm(X_train, y_train, n_pop, n_gen)
+
+    accuracy, individual, header = bestIndividual(hof, X_train, y_train)
     print('Number of Features in Subset: \t' + str(individual.count(1)))
-    print('Individual: \t\t' + str(individual))
     print('Feature Subset\t: ' + str(header))
-
-    print('\n\ncreating a new classifier with the result')
-
-    # read dataframe from csv one more time
-    df = pd.read_csv(dataframePath, sep=',')
-
-    # with feature subset
-    X = df[header]
-
-    clf = LogisticRegression()
-
-    scores = cross_val_score(clf, X, y, cv=5)
-    print("Accuracy with Feature Subset: \t" + str(avg(scores)) + "\n")
